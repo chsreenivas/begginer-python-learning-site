@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Python Learning Platform</title>
+
+<script src="https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.min.css">
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/mode/python/python.min.js"></script>
+
+<style>
+body { margin:0; font-family:Arial,sans-serif; background:#0f172a; color:#e5e7eb; }
+header{background:#020617; padding:16px; text-align:center; font-size:22px; color:#38bdf8;}
+.CodeMirror{height:300px; background:#1e293b; color:#e5e7eb; border-radius:8px; font-family:monospace;}
+button{margin-top:10px; padding:10px 16px; border-radius:8px; border:none; background:#22c55e; cursor:pointer; color:#052e16;}
+button:hover{background:#16a34a;}
+#output{margin-top:12px; background:#1e293b; border-radius:8px; padding:14px; min-height:200px; white-space:pre-wrap;}
+</style>
+</head>
+<body>
+
+<header>Python Learning Platform</header>
+
+<textarea id="code">print("Hello World")\nname = input("Enter your name: ")\nprint(f"Hello, {name}")</textarea>
+<br>
+<button onclick="runPython()">Run Python</button>
+<div id="output">Output will appear here...</div>
+
+<script>
+let pyodide;
+async function loadPy() { pyodide = await loadPyodide(); }
+loadPy();
+
+const editor = CodeMirror.fromTextArea(document.getElementById('code'), {
+    mode:'python', lineNumbers:true, theme:'default', indentUnit:4, tabSize:4
+});
+
+async function runPython() {
+    const out = document.getElementById('output');
+    const code = editor.getValue();
+    try {
+        pyodide.globals.set("js_input", async function(promptText){
+            return await new Promise(resolve => {
+                const result = prompt(promptText);
+                resolve(result===null?"":result);
+            });
+        });
+        const wrappedCode = `
+import sys
+from io import StringIO
+import builtins
+sys.stdout = StringIO()
+sys.stderr = StringIO()
+import asyncio
+async def input(prompt_text=''):
+    return await js_input(prompt_text)
+async def main():
+${code.split("\\n").map(l=>"    "+l).join("\\n")}
+await main()
+output = sys.stdout.getvalue()
+`;
+        await pyodide.runPythonAsync(wrappedCode);
+        out.textContent = pyodide.globals.get('output');
+    } catch(err) { out.textContent = 'Error: '+err.toString(); }
+}
+</script>
+
+</body>
+</html>
