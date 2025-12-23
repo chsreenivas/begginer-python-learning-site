@@ -1,70 +1,140 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Python Learning Platform</title>
 
 <script src="https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js"></script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.min.css">
 <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/mode/python/python.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css"/>
 
 <style>
-body { margin:0; font-family:Arial,sans-serif; background:#0f172a; color:#e5e7eb; }
-header{background:#020617; padding:16px; text-align:center; font-size:22px; color:#38bdf8;}
-.CodeMirror{height:300px; background:#1e293b; color:#e5e7eb; border-radius:8px; font-family:monospace;}
-button{margin-top:10px; padding:10px 16px; border-radius:8px; border:none; background:#22c55e; cursor:pointer; color:#052e16;}
-button:hover{background:#16a34a;}
-#output{margin-top:12px; background:#1e293b; border-radius:8px; padding:14px; min-height:200px; white-space:pre-wrap;}
+body{margin:0;font-family:system-ui;background:#1e1e1e;color:#e5e7eb}
+header{padding:16px;text-align:center;font-size:24px;color:#38bdf8}
+main{padding:12px}
+.compiler{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.CodeMirror,#console,#inputBox{
+  height:600px;
+  width:100%;
+  background:#1e1e1e;
+  color:#f8f8f2;
+  border-radius:10px;
+  font-size:15px;
+  caret-color:#ffffff;
+}
+button{margin-top:10px;padding:10px 16px;border:none;border-radius:8px;background:#22c55e;color:#052e16;font-size:15px;cursor:pointer}
+button:hover{background:#16a34a}
+#quiz button{margin:6px}
+#score{margin-top:10px;color:#4ade80;font-weight:bold}
+#inputBox{height:40px;padding:8px;}
 </style>
 </head>
 <body>
 
 <header>Python Learning Platform</header>
 
-<textarea id="code">print("Hello World")\nname = input("Enter your name: ")\nprint(f"Hello, {name}")</textarea>
-<br>
-<button onclick="runPython()">Run Python</button>
-<div id="output">Output will appear here...</div>
+<main>
+<section class="compiler">
+  <div>
+    <h2>Python Editor</h2>
+    <textarea id="code">print("Hello World")
+name = input("Enter your name: ")
+print(f"Hello {name}")</textarea>
+    <button id="runBtn">Run</button>
+  </div>
+
+  <div>
+    <h2>Console (Input & Output)</h2>
+    <textarea id="console" placeholder="Program output will appear here" readonly></textarea>
+    <input type="text" id="inputBox" placeholder="Type input here">
+    <button id="submitInput">Submit Input</button>
+  </div>
+</section>
+
+<section>
+  <h2>Python Quiz</h2>
+  <div id="quiz-container">
+    <button id="startQuizBtn">Start Quiz</button>
+    <div id="quiz"></div>
+    <div id="score"></div>
+  </div>
+</section>
+</main>
 
 <script>
 let pyodide;
-async function loadPy() { pyodide = await loadPyodide(); }
-loadPy();
+let pyodideReady = false;
+let pendingInputResolve;
+(async () => { pyodide = await loadPyodide(); pyodideReady = true; })();
 
 const editor = CodeMirror.fromTextArea(document.getElementById('code'), {
-    mode:'python', lineNumbers:true, theme:'default', indentUnit:4, tabSize:4
+  mode: 'python',
+  lineNumbers: true,
+  indentUnit: 4,
+  tabSize: 4,
+  theme: 'dracula'
+});
+editor.setSize('100%', '600px');
+
+async function runPython(){
+  const consoleEl = document.getElementById('console');
+  consoleEl.value = '';
+  const code = editor.getValue();
+  if(!pyodideReady){consoleEl.value='Loading Python runtime...'; return;}
+
+  pyodide.globals.set('get_input', async function(prompt=''){ 
+    consoleEl.value += prompt;
+    return new Promise(resolve=>{ pendingInputResolve = resolve; });
+  });
+
+  const wrappedCode = `import sys
+from io import StringIO
+sys.stdout=StringIO()
+
+def input(prompt=''):
+    from js import get_input
+    return get_input(prompt)
+
+${code}
+output = sys.stdout.getvalue()`;
+
+  try{
+    await pyodide.runPythonAsync(wrappedCode);
+    const output = pyodide.globals.get('output');
+    consoleEl.value += '\\n'+output;
+  } catch(err){
+    consoleEl.value += '\\nError:\\n'+err;
+  }
+}
+document.getElementById('runBtn').addEventListener('click', runPython);
+
+// Handle user input
+document.getElementById('submitInput').addEventListener('click', ()=>{
+  const val = document.getElementById('inputBox').value;
+  if(pendingInputResolve){ pendingInputResolve(val); pendingInputResolve = null; document.getElementById('inputBox').value='';}
 });
 
-async function runPython() {
-    const out = document.getElementById('output');
-    const code = editor.getValue();
-    try {
-        pyodide.globals.set("js_input", async function(promptText){
-            return await new Promise(resolve => {
-                const result = prompt(promptText);
-                resolve(result===null?"":result);
-            });
-        });
-        const wrappedCode = `
-import sys
-from io import StringIO
-import builtins
-sys.stdout = StringIO()
-sys.stderr = StringIO()
-import asyncio
-async def input(prompt_text=''):
-    return await js_input(prompt_text)
-async def main():
-${code.split("\\n").map(l=>"    "+l).join("\\n")}
-await main()
-output = sys.stdout.getvalue()
-`;
-        await pyodide.runPythonAsync(wrappedCode);
-        out.textContent = pyodide.globals.get('output');
-    } catch(err) { out.textContent = 'Error: '+err.toString(); }
-}
+// Quiz logic
+const questions=[
+['What does print() do?', ['Show output','Take input','Stop code'],0],
+['Which is a loop?', ['if','for','print'],1],
+['Which is correct?', ['x=5','5=x','int x'],0],
+['What symbol starts comments?', ['#','//','--'],0],
+['What stores many values?', ['list','int','str'],0],
+['What gets user input?', ['print','input','len'],1],
+['Which is Python?', ['Game','Language','Browser'],1],
+['Indentation is for?', ['Speed','Blocks','Comments'],1],
+['Which prints text?', ['say','print','echo'],1],
+['Which runs code?', ['Run','Compile','Execute'],2]
+];
+let qIndex=0, score=0;
+function startQuiz(){qIndex=0;score=0;document.getElementById('score').textContent='';showQuestion();}
+function showQuestion(){const q=questions[qIndex];let html=`<p>${qIndex+1}. ${q[0]}</p>`;q[1].forEach((c,i)=>{html+=`<button onclick=\"answer(${i})\">${c}</button>`});document.getElementById('quiz').innerHTML=html;}
+function answer(i){if(i===questions[qIndex][2])score++;qIndex++;if(qIndex<questions.length){showQuestion();}else{document.getElementById('quiz').textContent='Quiz Finished';document.getElementById('score').textContent=`Score: ${score}/10`;}}
+document.getElementById('startQuizBtn').addEventListener('click', startQuiz);
 </script>
 
 </body>
