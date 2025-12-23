@@ -69,8 +69,10 @@ let pyodide;
 let pyodideReady = false;
 let pendingInputResolve;
 
+// Load Pyodide
 (async () => { pyodide = await loadPyodide(); pyodideReady = true; })();
 
+// Setup CodeMirror editor
 const editor = CodeMirror.fromTextArea(document.getElementById('code'), {
   mode: 'python',
   lineNumbers: true,
@@ -86,10 +88,10 @@ async function runPython(){
   const code = editor.getValue();
   if(!pyodideReady){consoleEl.value='Loading Python runtime...'; return;}
 
-  // Create a JS proxy for input
+  // Create JS proxy for input()
   const pyInput = pyodide.ffi.create_proxy(async function(prompt=''){
     consoleEl.value += prompt;
-    return new Promise(resolve=>{ pendingInputResolve = resolve; });
+    return new Promise(resolve => { pendingInputResolve = resolve; });
   });
   pyodide.globals.set('input_box', pyInput);
 
@@ -112,9 +114,10 @@ output = sys.stdout.getvalue()`;
   }
 }
 
+// Run button
 document.getElementById('runBtn').addEventListener('click', runPython);
 
-// Handle user input
+// Submit input button
 document.getElementById('submitInput').addEventListener('click', ()=>{
   const val = document.getElementById('inputBox').value;
   if(pendingInputResolve){ pendingInputResolve(val); pendingInputResolve = null; document.getElementById('inputBox').value='';}
@@ -134,6 +137,7 @@ const questions=[
 ['Which runs code?', ['Run','Compile','Execute'],2]
 ];
 let qIndex=0, score=0;
+
 function startQuiz(){qIndex=0;score=0;document.getElementById('score').textContent='';showQuestion();}
 function showQuestion(){const q=questions[qIndex];let html=`<p>${qIndex+1}. ${q[0]}</p>`;q[1].forEach((c,i)=>{html+=`<button onclick=\"answer(${i})\">${c}</button>`});document.getElementById('quiz').innerHTML=html;}
 function answer(i){if(i===questions[qIndex][2])score++;qIndex++;if(qIndex<questions.length){showQuestion();}else{document.getElementById('quiz').textContent='Quiz Finished';document.getElementById('score').textContent=`Score: ${score}/10`;}}
