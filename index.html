@@ -41,7 +41,7 @@ button:hover{background:#16a34a}
   <div>
     <h2>Python Editor</h2>
     <textarea id="code">print("Hello World")
-name = input("Enter your name: ")
+name = await input("Enter your name: ")
 print(f"Hello {name}")</textarea>
     <button id="runBtn">Run</button>
   </div>
@@ -66,61 +66,58 @@ print(f"Hello {name}")</textarea>
 
 <script>
 let pyodide;
-let pyodideReady = false;
+let pyodideReady=false;
 let pendingInputResolve;
 
-// Load Pyodide
-(async () => { pyodide = await loadPyodide(); pyodideReady = true; })();
+(async()=>{pyodide=await loadPyodide();pyodideReady=true})();
 
-// Setup CodeMirror editor
-const editor = CodeMirror.fromTextArea(document.getElementById('code'), {
-  mode: 'python',
-  lineNumbers: true,
-  indentUnit: 4,
-  tabSize: 4,
-  theme: 'dracula'
+const editor=CodeMirror.fromTextArea(document.getElementById('code'),{
+mode:'python',lineNumbers:true,indentUnit:4,tabSize:4,theme:'dracula'
 });
-editor.setSize('100%', '600px');
+editor.setSize('100%','600px');
 
 async function runPython(){
-  const consoleEl = document.getElementById('console');
-  consoleEl.value = '';
-  const code = editor.getValue();
-  if(!pyodideReady){consoleEl.value='Loading Python runtime...'; return;}
+  const consoleEl=document.getElementById('console');
+  consoleEl.value='';
+  if(!pyodideReady){consoleEl.value='Loading Python...';return;}
+  const code=editor.getValue();
 
-  // Create JS proxy for input()
-  const pyInput = pyodide.ffi.create_proxy(async function(prompt=''){
-    consoleEl.value += prompt;
-    return new Promise(resolve => { pendingInputResolve = resolve; });
+  // JS function to append print output
+  const appendOutput=pyodide.ffi.create_proxy(s=>{consoleEl.value+=s;});
+  pyodide.globals.set('print_js',appendOutput);
+
+  // JS proxy for input
+  const pyInput=pyodide.ffi.create_proxy(async function(prompt=''){
+    consoleEl.value+=prompt;
+    return new Promise(resolve=>{pendingInputResolve=resolve;});
   });
-  pyodide.globals.set('input_box', pyInput);
+  pyodide.globals.set('input',pyInput);
 
-  const wrappedCode = `import sys
-from io import StringIO
-sys.stdout = StringIO()
+  const wrappedCode=`import asyncio
+async def input(prompt=''):
+    return await __BRIDGE_INPUT(prompt)
+def print(*args, **kwargs):
+    s=" ".join(str(a) for a in args)+"\\n"
+    print_js(s)
 
-def input(prompt=''):
-    return input_box(prompt)
+${code}`;
 
-${code}
-output = sys.stdout.getvalue()`;
+  pyodide.globals.set('__BRIDGE_INPUT',pyInput);
 
   try{
     await pyodide.runPythonAsync(wrappedCode);
-    const output = pyodide.globals.get('output');
-    consoleEl.value += '\\n'+output;
-  } catch(err){
-    consoleEl.value += '\\nError:\\n'+err;
+  }catch(err){
+    consoleEl.value+='\\nError:\\n'+err;
   }
 }
 
 // Run button
-document.getElementById('runBtn').addEventListener('click', runPython);
+document.getElementById('runBtn').addEventListener('click',runPython);
 
-// Submit input button
-document.getElementById('submitInput').addEventListener('click', ()=>{
-  const val = document.getElementById('inputBox').value;
-  if(pendingInputResolve){ pendingInputResolve(val); pendingInputResolve = null; document.getElementById('inputBox').value='';}
+// Submit input
+document.getElementById('submitInput').addEventListener('click',()=>{
+  const val=document.getElementById('inputBox').value;
+  if(pendingInputResolve){pendingInputResolve(val);pendingInputResolve=null;document.getElementById('inputBox').value='';}
 });
 
 // Quiz logic
@@ -136,12 +133,11 @@ const questions=[
 ['Which prints text?', ['say','print','echo'],1],
 ['Which runs code?', ['Run','Compile','Execute'],2]
 ];
-let qIndex=0, score=0;
-
+let qIndex=0,score=0;
 function startQuiz(){qIndex=0;score=0;document.getElementById('score').textContent='';showQuestion();}
-function showQuestion(){const q=questions[qIndex];let html=`<p>${qIndex+1}. ${q[0]}</p>`;q[1].forEach((c,i)=>{html+=`<button onclick=\"answer(${i})\">${c}</button>`});document.getElementById('quiz').innerHTML=html;}
+function showQuestion(){const q=questions[qIndex];let html=`<p>${qIndex+1}. ${q[0]}</p>`;q[1].forEach((c,i)=>{html+=`<button onclick="answer(${i})">${c}</button>`});document.getElementById('quiz').innerHTML=html;}
 function answer(i){if(i===questions[qIndex][2])score++;qIndex++;if(qIndex<questions.length){showQuestion();}else{document.getElementById('quiz').textContent='Quiz Finished';document.getElementById('score').textContent=`Score: ${score}/10`;}}
-document.getElementById('startQuizBtn').addEventListener('click', startQuiz);
+document.getElementById('startQuizBtn').addEventListener('click',startQuiz);
 </script>
 
 </body>
