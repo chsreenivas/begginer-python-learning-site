@@ -4,12 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Python Learning Platform</title>
-
-<script src="https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js"></script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css"/>
 <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/mode/python/python.min.js"></script>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css"/>
+<script src="https://cdn.jsdelivr.net/npm/skulpt/dist/skulpt.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/skulpt/dist/skulpt-stdlib.js"></script>
 
 <style>
 body{margin:0;font-family:system-ui;background:#1e1e1e;color:#e5e7eb}
@@ -41,7 +41,7 @@ button:hover{background:#16a34a}
   <div>
     <h2>Python Editor</h2>
     <textarea id="code">print("Hello World")
-name = await input("Enter your name: ")
+name = input("Enter your name: ")
 print(f"Hello {name}")</textarea>
     <button id="runBtn">Run</button>
   </div>
@@ -65,60 +65,45 @@ print(f"Hello {name}")</textarea>
 </main>
 
 <script>
-let pyodide;
-let pyodideReady=false;
-let pendingInputResolve;
-
-(async()=>{pyodide=await loadPyodide();pyodideReady=true})();
-
-const editor=CodeMirror.fromTextArea(document.getElementById('code'),{
-mode:'python',lineNumbers:true,indentUnit:4,tabSize:4,theme:'dracula'
+// Setup CodeMirror
+const editor = CodeMirror.fromTextArea(document.getElementById('code'), {
+  mode:'python',
+  lineNumbers:true,
+  theme:'dracula'
 });
 editor.setSize('100%','600px');
 
-async function runPython(){
-  const consoleEl=document.getElementById('console');
-  consoleEl.value='';
-  if(!pyodideReady){consoleEl.value='Loading Python...';return;}
-  const code=editor.getValue();
+let inputQueue = [];
+let consoleEl = document.getElementById('console');
 
-  // JS function to append print output
-  const appendOutput=pyodide.ffi.create_proxy(s=>{consoleEl.value+=s;});
-  pyodide.globals.set('print_js',appendOutput);
+function outf(text){ consoleEl.value += text+"\n"; }
 
-  // JS proxy for input
-  const pyInput=pyodide.ffi.create_proxy(async function(prompt=''){
-    consoleEl.value+=prompt;
-    return new Promise(resolve=>{pendingInputResolve=resolve;});
+function builtinInput(prompt){
+  return new Promise(resolve=>{
+    consoleEl.value += prompt;
+    inputQueue.push(resolve);
   });
-  pyodide.globals.set('input',pyInput);
-
-  const wrappedCode=`import asyncio
-async def input(prompt=''):
-    return await __BRIDGE_INPUT(prompt)
-def print(*args, **kwargs):
-    s=" ".join(str(a) for a in args)+"\\n"
-    print_js(s)
-
-${code}`;
-
-  pyodide.globals.set('__BRIDGE_INPUT',pyInput);
-
-  try{
-    await pyodide.runPythonAsync(wrappedCode);
-  }catch(err){
-    consoleEl.value+='\\nError:\\n'+err;
-  }
 }
 
-// Run button
-document.getElementById('runBtn').addEventListener('click',runPython);
-
-// Submit input
 document.getElementById('submitInput').addEventListener('click',()=>{
-  const val=document.getElementById('inputBox').value;
-  if(pendingInputResolve){pendingInputResolve(val);pendingInputResolve=null;document.getElementById('inputBox').value='';}
+  if(inputQueue.length>0){
+    inputQueue.shift()(document.getElementById('inputBox').value);
+    document.getElementById('inputBox').value="";
+  }
 });
+
+function runCode(){
+  consoleEl.value="";
+  let prog = editor.getValue();
+  Sk.configure({
+    output:outf,
+    read:function(x){return Sk.builtinFiles["files"][x];},
+    input: builtinInput
+  });
+  (Sk.misceval.asyncToPromise(()=>Sk.importMainWithBody("<stdin>",false,prog,true))).catch(err=>consoleEl.value += "\nError:\n"+err);
+}
+
+document.getElementById('runBtn').addEventListener('click',runCode);
 
 // Quiz logic
 const questions=[
@@ -126,7 +111,7 @@ const questions=[
 ['Which is a loop?', ['if','for','print'],1],
 ['Which is correct?', ['x=5','5=x','int x'],0],
 ['What symbol starts comments?', ['#','//','--'],0],
-['What stores many values?', ['list','int','str'],0],
+['Which stores many values?', ['list','int','str'],0],
 ['What gets user input?', ['print','input','len'],1],
 ['Which is Python?', ['Game','Language','Browser'],1],
 ['Indentation is for?', ['Speed','Blocks','Comments'],1],
@@ -139,6 +124,5 @@ function showQuestion(){const q=questions[qIndex];let html=`<p>${qIndex+1}. ${q[
 function answer(i){if(i===questions[qIndex][2])score++;qIndex++;if(qIndex<questions.length){showQuestion();}else{document.getElementById('quiz').textContent='Quiz Finished';document.getElementById('score').textContent=`Score: ${score}/10`;}}
 document.getElementById('startQuizBtn').addEventListener('click',startQuiz);
 </script>
-
 </body>
 </html>
