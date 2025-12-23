@@ -68,6 +68,7 @@ print(f"Hello {name}")</textarea>
 let pyodide;
 let pyodideReady = false;
 let pendingInputResolve;
+
 (async () => { pyodide = await loadPyodide(); pyodideReady = true; })();
 
 const editor = CodeMirror.fromTextArea(document.getElementById('code'), {
@@ -85,18 +86,19 @@ async function runPython(){
   const code = editor.getValue();
   if(!pyodideReady){consoleEl.value='Loading Python runtime...'; return;}
 
-  pyodide.globals.set('get_input', async function(prompt=''){ 
+  // Create a JS proxy for input
+  const pyInput = pyodide.ffi.create_proxy(async function(prompt=''){
     consoleEl.value += prompt;
     return new Promise(resolve=>{ pendingInputResolve = resolve; });
   });
+  pyodide.globals.set('input_box', pyInput);
 
   const wrappedCode = `import sys
 from io import StringIO
-sys.stdout=StringIO()
+sys.stdout = StringIO()
 
 def input(prompt=''):
-    from js import get_input
-    return get_input(prompt)
+    return input_box(prompt)
 
 ${code}
 output = sys.stdout.getvalue()`;
@@ -109,6 +111,7 @@ output = sys.stdout.getvalue()`;
     consoleEl.value += '\\nError:\\n'+err;
   }
 }
+
 document.getElementById('runBtn').addEventListener('click', runPython);
 
 // Handle user input
